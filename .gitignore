@@ -1,0 +1,5 @@
+/xenia-log-ingest
+*.exe
+*.test
+/dist/
+.env

@@ -1,0 +1,74 @@
+name: xenia-log-ingest
+
+# Self-contained log-triage stack: the ingest backend + Loki (store) + Grafana (view). Point the
+# Xenia-WebServices /logs proxy at the ingest service:
+#   LOG_BACKEND_URL=http://<this-host>:8090/ingest   LOG_BACKEND_TOKEN=<INGEST_TOKEN>
+# Copy .env.example -> .env and set INGEST_TOKEN (+ a Grafana admin password) before `docker compose up`.
+
+services:
+  loki:
+    image: grafana/loki:3.0.0 # 3.0+ required for structured metadata; bump to a newer 3.x as desired
+    command: -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki-data:/loki
+    restart: unless-stopped
+    networks: [logs]
+
+  ingest:
+    build: .
+    environment:
+      LISTEN_ADDR: ":8090"
+      LOKI_URL: "http://loki:3100"
+      INGEST_TOKEN: "${INGEST_TOKEN:?set INGEST_TOKEN in .env (must match the proxy's LOG_BACKEND_TOKEN)}"
+      GRAFANA_BASE_URL: "${GRAFANA_BASE_URL:-http://localhost:3000}"
+      JOB_LABEL: "xenia-logs"
+    depends_on:
+      - loki
+    restart: unless-stopped
+    networks: [logs]
+
+  grafana:
+    image: grafana/grafana:11.0.0 # bump as desired
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - loki
+    restart: unless-stopped
+    networks: [logs]
+
+  nginx_proxy:
+    image: nginx:latest
+    container_name: nginx_reverse_proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - /etc/letsencrypt/live/${HOSTNAME}:/etc/letsencrypt/live/${HOSTNAME}:ro
+      - /etc/letsencrypt/archive/${HOSTNAME}:/etc/letsencrypt/archive/${HOSTNAME}:ro
+      - /etc/letsencrypt/ssl-dhparams.pem:/etc/letsencrypt/ssl-dhparams.pem:ro
+      - /etc/letsencrypt/options-ssl-nginx.conf:/etc/letsencrypt/options-ssl-nginx.conf:ro
+    environment:
+      HOSTNAME: "${HOSTNAME}"
+    depends_on:
+      - ingest
+      - grafana
+    restart: unless-stopped
+    networks: [logs]
+
+
+volumes:
+  loki-data:
+  grafana-data:
+
+networks:
+  logs:
+    driver: bridge
