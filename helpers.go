@@ -55,6 +55,25 @@ func urlDecode(v string) string {
 	return v
 }
 
+// parseLineTimestamp reads a Xenia log line's leading epoch-MILLISECOND timestamp and returns it in
+// nanoseconds. Xenia lines look like "1784168956276 i> 00000150 <msg>"; the startup cvar dump and any
+// continuation lines have no leading timestamp -> (0, false). The leading token must be a plausible epoch-ms
+// (~2001..2096) so a stray small number or a word never false-matches.
+func parseLineTimestamp(line string) (int64, bool) {
+	i := strings.IndexByte(line, ' ')
+	if i <= 0 {
+		return 0, false
+	}
+	ms, err := strconv.ParseInt(line[:i], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	if ms < 1_000_000_000_000 || ms > 4_000_000_000_000 { // ~2001-09 .. 2096-10 in epoch ms
+		return 0, false
+	}
+	return ms * 1_000_000, true
+}
+
 // parseBuild extracts the build id from a Xenia log line carrying the "Build: " marker, e.g.
 //
 //	1784168179342 i> 00000150 Build: ibac/opencombas_v13_party@2dcd6b4cc on Jul 15 2026

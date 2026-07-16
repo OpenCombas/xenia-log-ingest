@@ -38,8 +38,9 @@ func TestStreamToLoki(t *testing.T) {
 	// Synthetic log (no real gamertags/log data — open-source project). Note: streamToLoki takes the
 	// ALREADY-gunzipped reader; the handler owns gunzip.
 	meta := &reportMeta{ReportID: "rid1", XUID: "000900000000AA01", Gamertag: "Tester-1"}
-	// The build line is NOT first (a cvar line precedes it) and is prefixed — like a real Xenia log.
-	body := "cvar_x = false\n1784 i> 001 Build: test-1 on Jul 15 2026\nalpha\nbravo\n"
+	// The build line is NOT first (a cvar line precedes it) and is prefixed with a real epoch-ms, like a
+	// Xenia log. The cvar line has no timestamp; the Build line's leading 1784168956276 is its own time.
+	body := "cvar_x = false\n1784168956276 i> 001 Build: test-1 on Jul 15 2026\nalpha\nbravo\n"
 
 	n, err := streamToLoki(strings.NewReader(body), cfg, loki, meta, 1000, 1024*1024)
 	if err != nil {
@@ -76,8 +77,24 @@ func TestStreamToLoki(t *testing.T) {
 	if total != 4 {
 		t.Errorf("total values = %d, want 4", total)
 	}
-	// timestamps are base+index as strings, strictly increasing.
-	if pushes[0].Streams[0].Values[0][0] != "1000" || pushes[0].Streams[0].Values[1][0] != "1001" {
-		t.Errorf("timestamps = %v/%v, want 1000/1001", pushes[0].Streams[0].Values[0][0], pushes[0].Streams[0].Values[1][0])
+	// The cvar line (no own ts) inherits baseNano (1000); the Build line carries its own epoch-ms in ns.
+	wantBuildTs := "1784168956276000000"
+	if pushes[0].Streams[0].Values[0][0] != "1000" || pushes[0].Streams[0].Values[1][0] != wantBuildTs {
+		t.Errorf("timestamps = %v/%v, want 1000/%s", pushes[0].Streams[0].Values[0][0], pushes[0].Streams[0].Values[1][0], wantBuildTs)
+	}
+}
+
+func TestParseLineTimestamp(t *testing.T) {
+	if ns, ok := parseLineTimestamp("1784168956276 i> 00000150 hello"); !ok || ns != int64(1784168956276)*1_000_000 {
+		t.Errorf("parseLineTimestamp = %d,%v; want %d,true", ns, ok, int64(1784168956276)*1_000_000)
+	}
+	if _, ok := parseLineTimestamp("d3d12_break_on_error = false"); ok {
+		t.Errorf("cvar line should have no timestamp")
+	}
+	if _, ok := parseLineTimestamp("1888 kernel"); ok {
+		t.Errorf("small leading number must not parse as an epoch-ms")
+	}
+	if _, ok := parseLineTimestamp("noleadingspace"); ok {
+		t.Errorf("no space -> no timestamp")
 	}
 }

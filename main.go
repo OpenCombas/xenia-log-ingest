@@ -161,8 +161,9 @@ func newReportID() string {
 	return hex.EncodeToString(b)
 }
 
-// baseTimestampNano derives the base nanosecond timestamp from the client's X-Xenia-Time (epoch ms), or
-// now. Each parsed line is stamped base+lineIndex so order is preserved and timestamps are unique.
+// baseTimestampNano derives a FALLBACK base timestamp from the client's X-Xenia-Time (epoch ms), or now. It
+// only seeds the leading header lines (the cvar dump) that precede the log's first timestamped line — every
+// line that carries its own epoch-ms is stamped with that instead (see streamToLoki / parseLineTimestamp).
 func baseTimestampNano(xeniaTimeMs string) int64 {
 	if ms, err := strconv.ParseInt(strings.TrimSpace(xeniaTimeMs), 10, 64); err == nil && ms > 0 {
 		return ms * 1_000_000

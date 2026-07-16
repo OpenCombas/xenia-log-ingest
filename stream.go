@@ -26,6 +26,10 @@ func streamToLoki(r io.Reader, cfg Config, loki *lokiClient, meta *reportMeta, b
 	firstLine := true
 	buildFound := false
 	var smd map[string]string
+	// Timestamps come from each line's own leading epoch-ms (parseLineTimestamp), NOT the received time.
+	// Lines without one (the cvar dump, continuation lines) inherit the last real timestamp; baseNano
+	// (X-Xenia-Time) seeds it for the header lines that precede the first timestamped line.
+	lastNano := baseNano
 
 	flush := func() error {
 		if len(batch) == 0 {
@@ -60,7 +64,12 @@ func streamToLoki(r io.Reader, cfg Config, loki *lokiClient, meta *reportMeta, b
 			}
 		}
 
-		ts := strconv.FormatInt(baseNano+int64(lineIdx), 10)
+		tsNano, ok := parseLineTimestamp(line)
+		if !ok {
+			tsNano = lastNano // no own timestamp -> inherit the last real one (Loki 3.0 accepts equal/out-of-order)
+		}
+		lastNano = tsNano
+		ts := strconv.FormatInt(tsNano, 10)
 		if cfg.StructuredMetadata {
 			batch = append(batch, []any{ts, line, smd})
 		} else {
