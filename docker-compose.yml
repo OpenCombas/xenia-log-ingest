@@ -52,6 +52,8 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+      # basic_auth for the /loki/ route. Generate (gitignored): htpasswd -cB nginx/loki.htpasswd <user>
+      - ./nginx/loki.htpasswd:/etc/nginx/loki.htpasswd:ro
       - /etc/letsencrypt/live/${HOSTNAME}:/etc/letsencrypt/live/${HOSTNAME}:ro
       - /etc/letsencrypt/archive/${HOSTNAME}:/etc/letsencrypt/archive/${HOSTNAME}:ro
       - /etc/letsencrypt/ssl-dhparams.pem:/etc/letsencrypt/ssl-dhparams.pem:ro

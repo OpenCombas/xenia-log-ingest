@@ -3,3 +3,5 @@
 *.test
 /dist/
 .env
+# basic_auth secret for the /loki/ route (generate with htpasswd; see nginx/loki.htpasswd.example)
+nginx/loki.htpasswd
