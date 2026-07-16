@@ -55,11 +55,22 @@ func urlDecode(v string) string {
 	return v
 }
 
-// parseBuild extracts the build string from a log's first line ("Build: ..."); "" if it isn't one.
+// parseBuild extracts the build id from a Xenia log line carrying the "Build: " marker, e.g.
+//
+//	1784168179342 i> 00000150 Build: ibac/opencombas_v13_party@2dcd6b4cc on Jul 15 2026
+//
+// -> "ibac/opencombas_v13_party@2dcd6b4cc" (the trailing " on <date>" is dropped). The build line is NOT
+// the log's first line and carries Xenia's "<ts> <lvl>> <thread> " prefix, so we search for the marker
+// anywhere in the line, not as a strict prefix. Returns "" if the line has no marker.
 func parseBuild(line string) string {
-	const p = "Build:"
-	if strings.HasPrefix(line, p) {
-		return strings.TrimSpace(line[len(p):])
+	const marker = "Build: "
+	i := strings.Index(line, marker)
+	if i < 0 {
+		return ""
 	}
-	return ""
+	b := strings.TrimSpace(line[i+len(marker):])
+	if j := strings.Index(b, " on "); j >= 0 { // drop the " on <date>" suffix, keep the branch@commit id
+		b = strings.TrimSpace(b[:j])
+	}
+	return b
 }

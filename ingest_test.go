@@ -9,11 +9,17 @@ import (
 )
 
 func TestParseBuild(t *testing.T) {
-	if got := parseBuild("Build: 2026-05-17-preview"); got != "2026-05-17-preview" {
-		t.Errorf("parseBuild = %q, want %q", got, "2026-05-17-preview")
+	// Real Xenia format: timestamped/prefixed, "Build: <id> on <date>".
+	line := "1784168179342 i> 00000150 Build: ibac/opencombas_v13_party@2dcd6b4cc on Jul 15 2026"
+	if got := parseBuild(line); got != "ibac/opencombas_v13_party@2dcd6b4cc" {
+		t.Errorf("parseBuild = %q, want the branch@commit id", got)
 	}
 	if got := parseBuild("some other line"); got != "" {
 		t.Errorf("parseBuild non-build = %q, want empty", got)
+	}
+	// Must not false-positive on cvar lines that merely contain "build".
+	if got := parseBuild("kernel_build_version = 1888"); got != "" {
+		t.Errorf("parseBuild false-positive = %q, want empty", got)
 	}
 }
 
@@ -32,19 +38,21 @@ func TestStreamToLoki(t *testing.T) {
 	// Synthetic log (no real gamertags/log data — open-source project). Note: streamToLoki takes the
 	// ALREADY-gunzipped reader; the handler owns gunzip.
 	meta := &reportMeta{ReportID: "rid1", XUID: "000900000000AA01", Gamertag: "Tester-1"}
-	body := "Build: test-1\nline A\nline B\n"
+	// The build line is NOT first (a cvar line precedes it) and is prefixed — like a real Xenia log.
+	body := "cvar_x = false\n1784 i> 001 Build: test-1 on Jul 15 2026\nalpha\nbravo\n"
 
 	n, err := streamToLoki(strings.NewReader(body), cfg, loki, meta, 1000, 1024*1024)
 	if err != nil {
 		t.Fatalf("streamToLoki: %v", err)
 	}
-	if n != 3 {
-		t.Errorf("lines = %d, want 3", n)
+	if n != 4 {
+		t.Errorf("lines = %d, want 4", n)
 	}
 	if meta.Build != "test-1" {
-		t.Errorf("build = %q, want test-1", meta.Build)
+		t.Errorf("build = %q, want test-1 (scanned off a non-first, prefixed line)", meta.Build)
 	}
-	// BatchLines=2 over 3 lines -> two pushes (2 then 1).
+	// BatchLines=2 over 4 lines -> two pushes (2 then 2). The build is found on line 1 before the first
+	// flush, so even the preceding cvar line (line 0, in the same batch) carries it via the shared map.
 	if len(pushes) != 2 {
 		t.Fatalf("pushes = %d, want 2", len(pushes))
 	}
@@ -65,8 +73,8 @@ func TestStreamToLoki(t *testing.T) {
 			}
 		}
 	}
-	if total != 3 {
-		t.Errorf("total values = %d, want 3", total)
+	if total != 4 {
+		t.Errorf("total values = %d, want 4", total)
 	}
 	// timestamps are base+index as strings, strictly increasing.
 	if pushes[0].Streams[0].Values[0][0] != "1000" || pushes[0].Streams[0].Values[1][0] != "1001" {

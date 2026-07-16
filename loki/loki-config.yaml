@@ -31,7 +31,7 @@ schema_config:
 
 limits_config:
   allow_structured_metadata: true # the ingest attaches report_id/xuid/... as structured metadata
-  retention_period: 744h # ~31d
+  retention_period: 168h # 7 days (max) — the compactor deletes chunks older than this
   reject_old_samples: false # tester logs are timestamped with the client's time, which may be in the past
   max_line_size: 4MB # matches the ingest's per-line cap
   ingestion_rate_mb: 32

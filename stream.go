@@ -24,6 +24,7 @@ func streamToLoki(r io.Reader, cfg Config, loki *lokiClient, meta *reportMeta, b
 	var totalBytes int64
 	lineIdx := 0
 	firstLine := true
+	buildFound := false
 	var smd map[string]string
 
 	flush := func() error {
@@ -44,10 +45,19 @@ func streamToLoki(r io.Reader, cfg Config, loki *lokiClient, meta *reportMeta, b
 
 		if firstLine {
 			firstLine = false
+			smd = meta.asStructuredMetadata()
+		}
+
+		// The Xenia "Build:" line sits a few lines in (after the cvar dump), so scan — not just line 0 —
+		// until we find it. Mutating the SHARED smd map back-fills every entry already appended to the
+		// not-yet-flushed batch (they all reference this one map), so the build lands on the whole report as
+		// long as the line appears within the first batch (it does — it's near the top).
+		if !buildFound && cfg.StructuredMetadata {
 			if b := parseBuild(line); b != "" {
 				meta.Build = b
+				smd["build"] = b
+				buildFound = true
 			}
-			smd = meta.asStructuredMetadata() // fixed for the whole report (build now known)
 		}
 
 		ts := strconv.FormatInt(baseNano+int64(lineIdx), 10)
